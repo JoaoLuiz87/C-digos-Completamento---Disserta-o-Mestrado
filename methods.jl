@@ -4,6 +4,7 @@ using Statistics
 using Optim
 using Random
 using EllipsisNotation
+using LineSearches
 include("core_changes.jl")
 
 #Gerador do Tensor W
@@ -851,58 +852,105 @@ function TT_WOPT_v4(X, subX, W, subW, sz, postoTTmax, δ, γ, diminuir::Int64, s
     return Z, postoTT
 end
 
-"""
-function SR1(X, W, postoTT, η, max_iter)
-    r = 10^-8
-    sz = size(X)
-    Y = W.*X
+function SR1(Y, W, postoTT, γ, ls, max_iter)
+    
+    ϕ(α) = f(Y, G_vec.+ (α*dk), sz, postoTT)
+    function dϕ(α)
+        g = grad_f(Y, G_vec.+ (α*dk), postoTT)
+        println("usou o")
+        println(size(g))
+        return dot(g, dk)
+    end
+    function ϕdϕ(α)
+        phi = f(Y, G_vec.+ (α*dk), sz, postoTT)
+        g = grad_f(Y, G_vec.+ (α*dk), postoTT)
+        dphi = dot(g, dk)
+        println(dphi)
+        return (phi, dphi)
+    end
+
+    normY = norm(Y)
+    sz = size(Y)
     N = length(sz)
     core_0 = init_TTcores(sz, postoTT)
     G_vec = mat2_to_vec(core_to_mat2(core_0))
-    G_vec = convert.(Float64, G_vec)
     tam = length(G_vec)
 
     ∇f = grad_f(Y, G_vec, postoTT)
-    Hk = Diagonal(ones(tam))
-
     G = mat2_to_core(vec_to_mat2(G_vec,sz,postoTT), postoTT)
-    Z = W.*full(TTtensor(G))
-    f = 0.5.*norm(Y-Z)^2
-    list_f = [f]
-    list_∇f = [norm(∇f)]
+    Z = W.*core_to_tensor(G, sz, postoTT)
+
+    fun = f(Y, Z, sz, postoTT)
+    norm∇f = norm(∇f)
+
+    list_f = [fun]
+    list_∇f = [norm∇f]
+    list_erro = [1.]
+    println("Inicializando...")
+
+    ##LINESEARCH
+    dk = -∇f
+    t, fun = ls(ϕ, dϕ, ϕdϕ, 1.0, fun, -norm∇f^2)
+    println("Busca linear realizada com t = $t")
+
+    G_vec_new = G_vec .- t*∇f
+    ∇f_new = grad_f(Y, G_vec_new, postoTT)
 
     iter = 2
     println("entrou no while")
-        while (iter<=max_iter)
-            G_vec = G_vec .- η*(Hk*∇f)
-            pk = -Hk*∇f
+        while (iter<=max_iter) && (list_erro[end] > 1e-04)
 
-            ∇f = grad_f(Y, G_vec, postoTT)
-            G_vec_next = G_vec + η.*pk
+            G = mat2_to_core(vec_to_mat2(G_vec_new,sz,postoTT), postoTT)
+            Z_old = Z
+            Z = W.*core_to_tensor(G, sz, postoTT)
+            append!(list_f, fun)
+            norm∇f_new = norm(∇f_new)
+            append!(list_∇f, norm∇f_new)
+            append!(list_erro, norm(Z- Z_old)/normY)
+            println("Atualizando todas as informações...")
+            println(" gradiente = $list_∇f")
+            println(" funcao = $list_f")
 
-            ∇f_next = grad_f(Y, G_vec_next, postoTT)
-            yk = ∇f_next - ∇f
-            sk = η.*pk
+            sk = G_vec_new .- G_vec
+            yk = ∇f_new .- ∇f
+            println("aqui?")
+            println(sk'*yk)
+            println(norm(yk)^2)
 
-            if abs(((sk - (Hk * yk))' * yk)) >= r * sqrt(sum((sk - (Hk * yk)) .^ 2)) * sqrt(sum(yk .^ 2))
-                Hk = Hk + (((sk - (Hk * yk)) * (sk - (Hk * yk))') / ((sk - (Hk * yk))' * yk));
+            τ = 0.6*(sk'*yk)/(norm(yk)^2) #Barzilai-Borwein com γ ∈ (0,1)
+            println("τ = $τ")
+
+            vk = sk .- (τ*yk)
+            curvature = vk'*yk
+
+            println("Calculando novo passo...")
+
+            if curvature <= 0
+                println("PROBLEMAS DE CURAVTURA")
+            dk = -∇f_new
+
+            else 
+                dk = -∇f_new .- ((vk'*∇f)/curvature)*vk
+                println("Novo passo calculado com sucesso!")
             end
+            #LINESEARCH
+            dϕ_0 = dot(dk, ∇f_new)
+            t, fun = ls(ϕ, dϕ, ϕdϕ, 1.0, fun, dϕ_0)
+            println("Busca linear realizada com t = $t")
 
-            Y = W.*X
-            G = mat2_to_core(vec_to_mat2(G_vec,sz,postoTT), postoTT)
-            Z = W.*full(TTtensor(G))
-            f = 0.5*norm(Y-Z)^2
-
-            append!(list_f, f)
-            append!(list_∇f, norm(∇f))
+            G_vec = G_vec_new
+            ∇f = ∇f_new
+            G_vec_new = G_vec_new .+ (t*dk)
+            ∇f_new = grad_f(Y, G_vec_new, postoTT)
             iter = iter + 1
+            println("terminou a iteração")
         end
 
-        Z = mat2_to_core(vec_to_mat2(G_vec, sz, postoTT), postoTT)
+        Z = mat2_to_core(vec_to_mat2(G_vec_new, sz, postoTT), postoTT)
         Z = core_to_tensor(Z, sz, postoTT)
-        return Z, list_f, list_∇f, iter
+        return Z, list_f, list_∇f, list_erro, iter
 end
-"""
+
 
 function mapping(X)
     v = 2*ones(Int, 16)
@@ -973,7 +1021,7 @@ function increase_TTrank!(G, postoTT, μ)
 end
 
 function W_c(W, sz, taxa)
-    subW = weight_tensor(sz, taxa)
+    subW = convert.(Int8, weight_tensor(sz, taxa))
     for i = prod(sz)
         if W[i] == 1
             subW[i] = 0
@@ -984,6 +1032,95 @@ end
 
 function ε_Ω(subA, Z, subW)
     return norm(subA - (subW.*Z))/norm(subA)
+end
+
+function TT_WOPT_DU(X, subX, W, subW, sz, postoTTmax, ρ, show_trace::Bool, fig::Bool)
+    N = length(sz)
+    normX = norm(X)
+    postoTT = ones(Int, N-1)
+    old_cores = reorth(init_TTcores(sz, postoTT))
+    Z_last = core_to_tensor(old_cores, sz, postoTT)
+    terminou = false
+    global postoTT
+
+    cores = copy(old_cores)
+
+    for k = 2:postoTTmax
+        for μ = 1:N-1
+
+            ε1 = ε_Ω(subX, Z_last, subW)
+            r = postoTT[μ]
+
+            if μ==1 && r == sz[1]
+                continue
+            end
+
+            if r ≥ postoTTmax
+                println("postoTT máximo")
+                continue
+            else
+                
+                print("aumento do postoTT: $postoTT -> ")
+                increase_TTrank!(cores, postoTT, μ)
+                println(postoTT)
+                tam = size(cores[μ])
+                println("tam = $tam e μ = $μ")
+                if Int(tam[1]*tam[2]) >= tam[3]
+                    println("orthog")
+                    cores = reorth(cores)
+
+                else
+                    println("problema de ortogonalidade para μ=$μ. Passando para próximo núcleo.")
+                    postoTT[μ] -= 1
+                    cores = copy(old_cores)
+                    continue
+                end
+
+                cores_vec = mat2_to_vec(core_to_mat2(cores))
+                cores_vec = convert.(Float64, cores_vec)
+
+                println("otimizando...")
+                res = optimize(Optim.only_fg!(fg!), cores_vec, ConjugateGradient(linesearch = MoreThuente(gtol = 0.01, x_tol=1e-15, maxfev=20)), Optim.Options(show_trace=show_trace, f_tol=1e-8, x_tol = 1e-8, iterations=500))
+                
+                cores = mat2_to_core(vec_to_mat2(res.minimizer,sz,postoTT),postoTT)
+
+                Z = core_to_tensor(cores, sz, postoTT)
+                ε2 = ε_Ω(subX, Z, subW)
+
+                    println("eps1 = $ε1")
+                    println("eps2 = $ε2")                
+
+                if  ε2 - ε1 > ρ*ε1
+                    println("voltou atrás")
+                    postoTT[μ] -= 1
+                    cores = copy(old_cores)
+                else
+                    Z_last = copy(Z)
+                    old_cores = copy(cores)
+                end
+
+                if ε2 < 1e-06
+                    terminou = true
+                    break
+                end
+
+
+
+            end
+        end
+        if terminou
+            println("terminou antes...")
+            break
+        end
+        println(k)
+    end
+    Z = Z_last
+    if fig
+    Z[Z.<0] .= 0.0
+    Z[Z.>1] .= 1.0
+    end
+
+    return Z, postoTT
 end
 
 
