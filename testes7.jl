@@ -1,3 +1,4 @@
+#TESTE DE RECONSTRUÇÃO DE IMAGENS COM TTWOPT-DU
 using LinearAlgebra, TensorToolbox
 using TestImages, Images
 using Optim, Random, LineSearches
@@ -6,94 +7,142 @@ include("methods.jl");
 include("core_changes.jl");
 
 Random.seed!(0)
-δ = [0.01, 0.001, 0.0001]
-γ = 1.05
-postoTTmax = 16
-num_points = 4096
-f(x) = sin.(x./4)*cos.(x.^2)
-x = LinRange(-4*pi, 4*pi, num_points)
-missing_rates = [0.1,0.3,0.5, 0.7, 0.9]
-b = length(missing_rates)
 
-erros_dim1 = zeros(b,3)
-tempo_dim1 = []
-erros_dim2 = zeros(b,3)
-tempo_dim2 = []
-erros_dim3 = zeros(b,3)
-tempo_dim3 = []
+function psnr(X, Z)
+	if size(X)!=size(Z)
+		println("dimensões diferentes")
+		return nothing
+	end
 
-println("Começando...")
-for teste=1:3
-	if teste==1
-		println("realizando teste 1...")
-		global sz = [16, 16, 16]
-		fX = reshape(collect(f.(x)), sz...)
-		for i = 1:3
-			for j = 1:length(missing_rates)
-				println("j = $j")
-				W = weight_tensor(sz, missing_rates[j])
-				subW = W_c(W, sz, 0.8)
-				Y = W.*fX
-				subY = subW.*fX
+	mse = (norm(X-Z)^2)/196608 
+	erro_psnr = 10*log10(1/mse)
+	return erro_psnr
+end
 
-				global W
-				global Y
-				global postoTT
-				append!(tempo_dim1, @elapsed Z, rank = TT_WOPT_v4(Y, subY, W, subW, sz, postoTTmax, δ[i], γ, 2, false, false));
-				erros_dim1[j,i] = norm(fX - Z)/norm(fX)
+peppers = channelview(load("/home/joao/Mestrado/imagens/peppers.tiff"))
+woman = channelview(load("/home/joao/Mestrado/imagens/woman.tiff"))
+satelite= channelview(load("/home/joao/Mestrado/imagens/satelite1.tiff"));
+textura =  channelview(load("/home/joao/Mestrado/imagens/textura2.tif"));
+
+peppers = permutedims(peppers, (2,3,1));
+woman = permutedims(woman, (2,3,1));
+satelite = permutedims(satelite, (2,3,1));
+textura = permutedims(satelite, (2,3,1));
+
+peppers = mapping(peppers)
+woman = mapping(woman)
+satelite = mapping(satelite);
+textura = mapping(textura);
+
+sz = [4,4,4,4,4,4,4,4,3]
+tam = 9
+mr = 0.5
+ρ = [1.0, 0.1, 0.01]
+postoTTmax = 10;
+W = weight_tensor(sz, mr)
+subW = W_c(W, sz, 0.8)
+figs = ["peppers", "woman", "satelite", "textura"]
+b = length(ρ)
+
+erros_peppers = zeros(b)
+psnr_peppers = zeros(b)
+tempo_peppers = []
+erros_woman = zeros(b)
+psnr_woman = zeros(b)
+tempo_woman = []
+erros_satelite = zeros(b)
+psnr_satelite = zeros(b)
+tempo_satelite = []
+erros_textura = zeros(b)
+psnr_textura = zeros(b)
+tempo_textura = []
+
+open("teste7_postoTT_imagens_TTWOPTDU.txt", "w") do file
+	println("Iniciando...")
+	for imagem in figs
+		if imagem == "peppers"
+			println("peppers...")
+			Y = W.*peppers
+			subY = subW.*peppers
+			global W
+			global Y
+			global postoTT
+			
+			for i=1:b
+				rho = ρ[i]
+				println(rho)
+				append!(tempo_peppers, @elapsed Z, rank = TT_WOPT_DU(Y, subY, W, subW, sz, postoTTmax, rho, false, true));
+				erros_peppers[i] = norm(peppers - Z)/norm(peppers)
+				psnr_peppers[i] = psnr(peppers, Z)
+				Z = inverse_mapping(Z)
+				save("TTWOPTDU_$imagem$rho.pdf",colorview(RGB, permuteddimsview(Z, (3, 1, 2))))
+				write(file, "Posto-TT da reconstrução de $imagem com rho = $rho: $rank")
 			end
-		end
 
-	elseif teste==2
-		println("realizando teste 2...")
-		sz = [8, 8, 8, 8]
-		fX = reshape(collect(f.(x)), sz...)
-		for i = 1:3
-			for j = 1:length(missing_rates)
-				println("j = $j")
-				W = weight_tensor(sz, missing_rates[j])
-				subW = W_c(W, sz, 0.8)
-				Y = W.*fX
-				subY = subW.*fX
-
-				global W
-				global Y
-				global postoTT
-				append!(tempo_dim2, @elapsed Z, rank = TT_WOPT_v4(Y, subY, W, subW, sz, postoTTmax, δ[i], γ, 2, false, false));
-				erros_dim2[j,i] = norm(fX - Z)/norm(fX)
+		elseif imagem == "woman"
+			println("woman...")
+			Y = W.*woman
+			subY = subW.*woman
+			global W
+			global Y
+			global postoTT
+			
+			for i=1:b
+				rho = ρ[i]
+				println(rho)
+				append!(tempo_woman, @elapsed Z, rank = TT_WOPT_DU(Y, subY, W, subW, sz, postoTTmax, rho, false, true));
+				erros_woman[i] = norm(woman - Z)/norm(woman)
+				psnr_woman[i] = psnr(woman, Z)
+				Z = inverse_mapping(Z)
+				save("TTWOPTDU_$imagem$rho.pdf",colorview(RGB, permuteddimsview(Z, (3, 1, 2))))
+				write(file, "Posto-TT da reconstrução de $imagem com rho = $rho: $rank")
 			end
-		end
-	else
-		sz = [4, 4, 4, 4, 4, 4]
-		println("realizando teste 3...")
-		fX = reshape(collect(f.(x)), sz...)
-		for i = 1:3
-			for j = 1:length(missing_rates)
-				println("j = $j")
-				W = weight_tensor(sz, missing_rates[j])
-				subW = W_c(W, sz, 0.8)
-				Y = W.*fX
-				subY = subW.*fX
 
-				global W
-				global Y
-				global postoTT
-				append!(tempo_dim3, @elapsed Z, rank = TT_WOPT_v4(Y, subY, W, subW, sz, postoTTmax, δ[i], γ, 2, false, false));
-				erros_dim3[j,i] = norm(fX - Z)/norm(fX)
+		elseif imagem == "satelite"
+			println("satelite...")
+			Y = W.*satelite
+			subY = subW.*satelite
+			global W
+			global Y
+			global postoTT
+			
+			for i=1:b
+				rho = ρ[i]
+				println(rho)
+				append!(tempo_satelite, @elapsed Z, rank = TT_WOPT_DU(Y, subY, W, subW, sz, postoTTmax, rho, false, true));
+				erros_satelite[i] = norm(satelite - Z)/norm(satelite)
+				psnr_satelite[i] = psnr(satelite, Z)
+				Z = inverse_mapping(Z)
+				save("TTWOPTDU_$imagem$rho.pdf",colorview(RGB, permuteddimsview(Z, (3, 1, 2))))
+				write(file, "Posto-TT da reconstrução de $imagem com rho = $rho: $rank")
+			end
+
+		else
+			println("textura...")
+			Y = W.*textura
+			subY = subW.*textura
+			global W
+			global Y
+			global postoTT
+			
+			for i=1:b
+				rho = ρ[i]
+				println(rho)
+				append!(tempo_textura, @elapsed Z, rank = TT_WOPT_DU(Y, subY, W, subW, sz, postoTTmax, rho, false, true));
+				erros_textura[i] = norm(textura - Z)/norm(textura)
+				psnr_textura[i] = psnr(textura, Z)
+				Z = inverse_mapping(Z)
+				save("TTWOPTDU_$imagem$rho.pdf",colorview(RGB, permuteddimsview(Z, (3, 1, 2))))
+				write(file, "Posto-TT da reconstrução de $imagem com rho = $rho: $rank")
 			end
 		end
 	end
 end
-println("ok!")
-df1 = DataFrame(mr = missing_rates, ordem_3 = erros_dim1[:,1], ordem_4 = erros_dim2[:,1], ordem_6 = erros_dim3[:,1])
-df2 = DataFrame(mr = missing_rates, ordem_3 = erros_dim1[:,2], ordem_4 = erros_dim2[:,2], ordem_6 = erros_dim3[:,2])
-df3 = DataFrame(mr = missing_rates, ordem_3 = erros_dim1[:,3], ordem_4 = erros_dim2[:,3], ordem_6 = erros_dim3[:,3])
-df4 = DataFrame(mr = missing_rates, ordem_3 = tempo_dim1[1:5], ordem_4 = tempo_dim2[1:5], ordem_6 = tempo_dim3[1:5])
-df5 = DataFrame(mr = missing_rates, ordem_3 = tempo_dim1[6:10], ordem_4 = tempo_dim2[6:10], ordem_6 = tempo_dim3[6:10])
-df6 = DataFrame(mr = missing_rates, ordem_3 = tempo_dim1[11:15], ordem_4 = tempo_dim2[11:15], ordem_6 = tempo_dim3[11:15])
-CSV.write("erros_delta1_teste7.csv",df1)
-CSV.write("erros_delta2_teste7.csv",df2)
-CSV.write("erros_delta3_teste7.csv",df3)
-CSV.write("tempo_delta1_teste7.csv",df4)
-CSV.write("tempo_delta2_teste7.csv",df5)
-CSV.write("tempo_delta3_teste7.csv",df6)
+println("Criando dataframes...")
+df1 = DataFrame(rho = ρ, peppers = erros_peppers, woman = erros_woman, satelite = erros_satelite, textura = erros_textura)
+df2 = DataFrame(rho = ρ, peppers = psnr_peppers, woman = psnr_woman, satelite = psnr_satelite, textura = psnr_textura)
+df3 = DataFrame(rho = ρ, peppers = tempo_peppers, woman = tempo_woman, satelite = tempo_satelite, textura = tempo_textura)
+
+CSV.write("TTWOPTDU_imagens_RSE.csv",df1)
+CSV.write("TTWOPTDU_imagens_PSNR.csv",df2)
+CSV.write("TTWOPTDU_imagens_tempos",df3)

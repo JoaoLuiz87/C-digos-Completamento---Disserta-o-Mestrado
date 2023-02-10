@@ -1,4 +1,4 @@
-#TESTE TTWOPT-DU COM A TENSORIZAÇÃO DE UMA MATRIZ - F(X) = exp(-0.5 * ||x||)
+#TESTE TTWOPT-DU COM A TENSORIZAÇÃO DE UMA MATRIZ - f(x) = 0.2x[1]^2 - 0.1x[2]^2  - cos(2x[2]) + sin(3x[1])
 
 using LinearAlgebra, TensorToolbox
 using TestImages, Images, LaTeXStrings
@@ -6,7 +6,6 @@ using Optim, Random, LineSearches
 using Plots, DataFrames, CSV
 include("methods.jl");
 include("core_changes.jl");
-
 function mapeia(X)
     v = 2*ones(Int, 12)
     new_dim = [v...]
@@ -30,10 +29,10 @@ end
 Random.seed!(1234)
 ρ = [1.0, 0.1, 0.01]
 δ = [0.1, 0.01, 0.001]
-postoTTmax = 16
+postoTTmax = 8
 x = LinRange(-pi, pi, 64)
 y = LinRange(-pi, pi, 64)
-f(x) = exp(-0.5*norm(x))
+f(x) = 0.2x[1]^2 - 0.1x[2]^2  - cos(2x[2]) + sin(3x[1])
 grid = collect(Iterators.product(x, y))
 z = f.(grid)
 hz = mapeia(z)
@@ -50,8 +49,10 @@ subW = W_c(W, sz, 0.8)
 Y = W.*hz;
 subY = subW.*hz
 
+
+
 println("comecou...")
-open("teste15_postoTT.txt", "w") do file
+open("teste16_postoTT.txt", "w") do file
 	for k=1:2		
 		if k==1
 			i=1
@@ -60,10 +61,9 @@ open("teste15_postoTT.txt", "w") do file
 				global W
 				global Y
 				global postoTT
-				Random.seed!(1234)
 				append!(tempos_rho, @elapsed Z, rank = TT_WOPT_DU(Y, subY, W, subW, sz, postoTTmax, rho, false, false));
 				append!(erros_rho, norm(hz - Z)/norm(hz))
-				write(file, "posto-TT para rho = $rho : $rank \n")
+				write(file, "posto-TT para rho = $rho : $rank")
 
 				newZ = unmapeia(Z)
 
@@ -71,7 +71,7 @@ open("teste15_postoTT.txt", "w") do file
     			title=("ρ = $rho"),
     			titlefontsize=10,
     			xticks=(range(1,64,5), [L"-\pi", L"\pi/2", L"0", L"\pi/2", L"\pi"]),
-    			xtickfontsize=7, 
+    			xtickfontsize=7,
     			yticks=(range(1,64,5), [L"-\pi", L"\pi/2", L"0", L"\pi/2", L"\pi"]), 
     			ytickfontsize=7)
     			println("deu ruim")
@@ -87,10 +87,9 @@ open("teste15_postoTT.txt", "w") do file
 				global W
 				global Y
 				global postoTT
-				Random.seed!(1234)
-				append!(tempos_delta, @elapsed Z, rank = TT_WOPT_v4(Y, subY, W, subW, sz, postoTTmax, delta, 1.0, 1, false, false));
+				append!(tempos_delta, @elapsed Z, rank = TT_WOPT_v4(Y, subY, W, subW, sz, postoTTmax, delta, 1.0, 0, false, false));
 				append!(erros_delta, norm(hz - Z)/norm(hz))
-				write(file, "posto-TT para delta = $delta : $rank \n")
+				write(file, "posto-TT para delta = $delta : $rank")
 
 				newZ = unmapeia(Z)
 
@@ -109,10 +108,10 @@ open("teste15_postoTT.txt", "w") do file
 end
 println("ok!")
 df = DataFrame(rho = ρ, rse_rho = erros_rho, tempos_rho = tempos_rho, delta = δ, rse_delta = erros_delta , tempos_delta = tempos_delta)
-CSV.write("TTWOPT_DU_matriz_exp.csv",df)
+CSV.write("TTWOPT_DU_matriz_polinomio.csv",df)
 
 println("gerando gráficos...")
 figura1 = plot(graficos_rho..., layout=(1,3), colorbar=true, size=(800,200))
 figura2 = plot(graficos_delta..., layout=(1,3), colorbar=true, size=(800,200))
-savefig(figura1, "teste15_rho.pdf")
-savefig(figura2, "teste15_delta.pdf")
+savefig(figura1, "teste16_rho.pdf")
+savefig(figura2, "teste16_delta.pdf")
